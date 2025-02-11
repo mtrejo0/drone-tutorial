@@ -1,182 +1,286 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
-import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
+import React, { useEffect, useRef, useState } from 'react';
+import * as Blockly from 'blockly';
+import DroneWorld from './DroneWorld'; // Assuming DroneWorld is in the same directory
 
-export default function ThreeDWorld() {
-  const mountRef = useRef(null);
-  const cubeRef = useRef(null);
-  const sceneRef = useRef(null);
-  const cameraRef = useRef(null);
-  const rendererRef = useRef(null);
-  const worldRef = useRef(null);
-  const droneBodyRef = useRef(null);
+export default function BlocklyEditor() {
+  const blocklyWorkspaceRef = useRef(null);
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [instructions, setInstructions] = useState([]);
+  const [shouldReset, setShouldReset] = useState(false);
 
   useEffect(() => {
-    // Physics world setup
-    const world = new CANNON.World({
-      gravity: new CANNON.Vec3(0, -9.82, 0),
-    });
-    worldRef.current = world;
-
-    // Scene setup
-    const scene = new THREE.Scene();
-    sceneRef.current = scene;
-    scene.background = new THREE.Color(0x1a1a1a);
-
-    // Add lighting for better visibility
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    directionalLight.position.set(10, 10, 10);
-    scene.add(directionalLight);
-
-    // Add ground plane - Visual
-    const groundGeometry = new THREE.PlaneGeometry(20, 20);
-    const groundMaterial = new THREE.MeshPhongMaterial({ 
-      color: 0x808080,
-      side: THREE.DoubleSide 
-    });
-    const groundMesh = new THREE.Mesh(groundGeometry, groundMaterial);
-    groundMesh.rotation.x = -Math.PI / 2;
-    groundMesh.position.y = -2;
-    scene.add(groundMesh);
-
-    // Add ground plane - Physics
-    const groundBody = new CANNON.Body({
-      type: CANNON.Body.STATIC,
-      shape: new CANNON.Plane(),
-    });
-    groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-    groundBody.position.set(0, -2, 0);
-    world.addBody(groundBody);
-
-    // Camera setup
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000
-    );
-    cameraRef.current = camera;
-    camera.position.z = 5;
-    camera.position.y = 2;
-    camera.lookAt(0, 0, 0);
-
-    // Renderer setup
-    const renderer = new THREE.WebGLRenderer();
-    rendererRef.current = renderer;
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    mountRef.current.appendChild(renderer.domElement);
-
-    // Create drone body
-    const droneGeometry = new THREE.Group();
-    
-    // Main body
-    const bodyGeometry = new THREE.BoxGeometry(1, 0.2, 1);
-    const bodyMaterial = new THREE.MeshPhongMaterial({ color: 0x666666 });
-    const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
-    
-    // Arms
-    const armGeometry = new THREE.CylinderGeometry(0.05, 0.05, 1, 8);
-    const armMaterial = new THREE.MeshPhongMaterial({ color: 0x444444 });
-    
-    // Create 4 arms
-    for (let i = 0; i < 4; i++) {
-      const arm = new THREE.Mesh(armGeometry, armMaterial);
-      arm.rotation.z = Math.PI / 2;
-      arm.position.x = Math.cos(i * Math.PI / 2) * 0.5;
-      arm.position.z = Math.sin(i * Math.PI / 2) * 0.5;
-      
-      // Rotors
-      const rotorGeometry = new THREE.CylinderGeometry(0.2, 0.2, 0.05, 16);
-      const rotorMaterial = new THREE.MeshPhongMaterial({ color: 0x222222 });
-      const rotor = new THREE.Mesh(rotorGeometry, rotorMaterial);
-      rotor.position.y = 0;
-      arm.add(rotor);
-      droneGeometry.add(arm);
+    // Check if workspace already exists and clean it up
+    if (blocklyWorkspaceRef.current) {
+      blocklyWorkspaceRef.current.dispose();
     }
-    
-    droneGeometry.add(body);
-    scene.add(droneGeometry);
-    cubeRef.current = droneGeometry;
 
-    // Physics body
-    const droneShape = new CANNON.Box(new CANNON.Vec3(0.5, 0.1, 0.5));
-    const droneBody = new CANNON.Body({
-      mass: 1,
-      shape: droneShape,
-    });
-    droneBodyRef.current = droneBody;
-    world.addBody(droneBody);
+    // Clear any existing blockly div content
+    const blocklyDiv = document.getElementById('blocklyDiv');
+    if (blocklyDiv) {
+      blocklyDiv.innerHTML = '';
+    }
 
-    // Animation loop update
-    const animate = () => {
-      requestAnimationFrame(animate);
-      
-      world.step(1/60);
-      
-      // Update drone position and rotation from physics
-      droneGeometry.position.copy(droneBody.position);
-      droneGeometry.quaternion.copy(droneBody.quaternion);
-      
-      renderer.render(scene, camera);
+    // Blockly setup
+    const toolbox = {
+      kind: 'categoryToolbox',
+      contents: [
+        {
+          kind: 'category',
+          name: 'Drone Controls',
+          colour: '#5CA699',
+          contents: [
+            {
+              kind: 'block',
+              type: 'drone_pitch',
+            },
+            {
+              kind: 'block',
+              type: 'drone_roll',
+            },
+            {
+              kind: 'block',
+              type: 'drone_yaw',
+            },
+            {
+              kind: 'block',
+              type: 'drone_hover',
+            },
+            {
+              kind: 'block',
+              type: 'delay',
+            },
+          ],
+        },
+      ],
     };
-    animate();
 
-    // Handle window resize
-    const handleResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    };
-    window.addEventListener('resize', handleResize);
-
-    // Updated controls
-    const handleKeyDown = (event) => {
-      const force = 1000;
-      const torque = 2;
-      
-      switch (event.key) {
-        case ' ': // Spacebar for thrust
-          droneBody.applyLocalForce(new CANNON.Vec3(0, force, 0), new CANNON.Vec3(0, 0, 0));
-          break;
-        case 'w': // Forward pitch
-          droneBody.applyLocalForce(new CANNON.Vec3(0, force, -force), new CANNON.Vec3(0, 0, 0));
-          break;
-        case 's': // Backward pitch
-          droneBody.applyLocalForce(new CANNON.Vec3(0, force, force), new CANNON.Vec3(0, 0, 0));
-          break;
-        case 'a': // Roll left
-          droneBody.applyTorque(new CANNON.Vec3(0, 0, torque));
-          break;
-        case 'd': // Roll right
-          droneBody.applyTorque(new CANNON.Vec3(0, 0, -torque));
-          break;
-        case 'ArrowLeft': // Yaw left
-          droneBody.applyTorque(new CANNON.Vec3(0, torque, 0));
-          break;
-        case 'ArrowRight': // Yaw right
-          droneBody.applyTorque(new CANNON.Vec3(0, -torque, 0));
-          break;
-        case 'ArrowUp': // Pitch forward
-          droneBody.applyTorque(new CANNON.Vec3(torque, 0, 0));
-          break;
-        case 'ArrowDown': // Pitch backward
-          droneBody.applyTorque(new CANNON.Vec3(-torque, 0, 0));
-          break;
+    // Define custom blocks
+    Blockly.Blocks['drone_pitch'] = {
+      init: function() {
+        this.appendDummyInput()
+            .appendField("Pitch")
+            .appendField(new Blockly.FieldDropdown([
+              ["Forward", "FORWARD"],
+              ["Backward", "BACKWARD"]
+            ]), "DIRECTION")
+            .appendField("for")
+            .appendField(new Blockly.FieldNumber(1, 0.1, 10), "DURATION")
+            .appendField("seconds");
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(230);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
 
-    // Cleanup
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('keydown', handleKeyDown);
-      mountRef.current?.removeChild(renderer.domElement);
+    Blockly.Blocks['drone_roll'] = {
+      init: function() {
+        this.appendDummyInput()
+            .appendField("Roll")
+            .appendField(new Blockly.FieldDropdown([
+              ["Left", "LEFT"],
+              ["Right", "RIGHT"]
+            ]), "DIRECTION")
+            .appendField("for")
+            .appendField(new Blockly.FieldNumber(1, 0.1, 10), "DURATION")
+            .appendField("seconds");
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(230);
+      }
     };
-  }, []);
 
-  return <div ref={mountRef} style={{ width: '100%', height: '100vh' }} />;
+    Blockly.Blocks['drone_yaw'] = {
+      init: function() {
+        this.appendDummyInput()
+            .appendField("Yaw")
+            .appendField(new Blockly.FieldDropdown([
+              ["Left", "LEFT"],
+              ["Right", "RIGHT"]
+            ]), "DIRECTION")
+            .appendField("for")
+            .appendField(new Blockly.FieldNumber(1, 0.1, 10), "DURATION")
+            .appendField("seconds");
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(230);
+      }
+    };
+
+    Blockly.Blocks['drone_hover'] = {
+      init: function() {
+        this.appendDummyInput()
+            .appendField("Hover at")
+            .appendField(new Blockly.FieldNumber(1, 0.1, 10), "HEIGHT")
+            .appendField("meters for")
+            .appendField(new Blockly.FieldNumber(1, 0.1, 10), "DURATION")
+            .appendField("seconds");
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(230);
+      }
+    };
+
+    Blockly.Blocks['delay'] = {
+      init: function() {
+        this.appendDummyInput()
+            .appendField("Wait for")
+            .appendField(new Blockly.FieldNumber(1, 0.1, 10), "SECONDS")
+            .appendField("seconds");
+        this.setPreviousStatement(true, null);
+        this.setNextStatement(true, null);
+        this.setColour(230);
+      }
+    };
+
+    // Create Blockly workspace
+    const workspace = Blockly.inject('blocklyDiv', {
+      toolbox: toolbox,
+      scrollbars: true,
+      horizontalLayout: false,
+      toolboxPosition: 'start',
+    });
+    
+    blocklyWorkspaceRef.current = workspace;
+
+    // Cleanup function
+    return () => {
+      if (blocklyWorkspaceRef.current) {
+        blocklyWorkspaceRef.current.dispose();
+        blocklyWorkspaceRef.current = null;
+      }
+    };
+  }, []); // Empty dependency array ensures this only runs once
+
+  // Function to execute Blockly code
+  const executeBlocklyCode = async () => {
+    if (isExecuting) return;
+    setIsExecuting(true);
+    
+    // Reset world and drone before executing new instructions
+    setShouldReset(true);
+    // Wait a brief moment for reset to complete
+    await new Promise(resolve => setTimeout(resolve, 100));
+    setShouldReset(false);
+
+    const workspace = blocklyWorkspaceRef.current;
+    const topBlocks = workspace.getTopBlocks(true);
+    const newInstructions = [];
+    
+    for (const block of topBlocks) {
+      let currentBlock = block;
+      while (currentBlock) {
+        const type = currentBlock.type;
+        const fields = currentBlock.getFieldValue.bind(currentBlock);
+
+        switch (type) {
+          case 'drone_pitch': {
+            const direction = fields('DIRECTION');
+            const duration = parseFloat(fields('DURATION')) * 1000;
+            newInstructions.push({
+              type: 'pitch',
+              direction,
+              duration
+            });
+            break;
+          }
+          case 'drone_roll': {
+            const direction = fields('DIRECTION');
+            const duration = parseFloat(fields('DURATION')) * 1000;
+            newInstructions.push({
+              type: 'roll',
+              direction,
+              duration
+            });
+            break;
+          }
+          case 'drone_yaw': {
+            const direction = fields('DIRECTION');
+            const duration = parseFloat(fields('DURATION')) * 1000;
+            newInstructions.push({
+              type: 'yaw',
+              direction,
+              duration
+            });
+            break;
+          }
+          case 'drone_hover': {
+            const height = parseFloat(fields('HEIGHT'));
+            const duration = parseFloat(fields('DURATION')) * 1000;
+            newInstructions.push({
+              type: 'hover',
+              height,
+              duration
+            });
+            break;
+          }
+          case 'delay': {
+            const duration = parseFloat(fields('SECONDS')) * 1000;
+            newInstructions.push({
+              type: 'delay',
+              duration
+            });
+            break;
+          }
+        }
+        currentBlock = currentBlock.getNextBlock();
+      }
+    }
+    setInstructions(newInstructions);
+    setIsExecuting(false);
+  };
+
+  return (
+    <div style={{ 
+      display: 'flex', 
+      width: '100%', 
+      height: '100vh',
+      position: 'absolute',
+      top: 0,
+      left: 0
+    }}>
+      {/* 3D Scene - Left side */}
+      <div style={{ flex: '3' }}>
+        <DroneWorld 
+          instructions={instructions} 
+          isExecuting={isExecuting} 
+          shouldReset={shouldReset}
+        />
+      </div>
+      
+      {/* Blockly Editor - Right side */}
+      <div style={{ 
+        flex: '2',
+        height: '100%',
+        display: 'flex', 
+        flexDirection: 'column',
+        borderLeft: '2px solid #ccc',
+        backgroundColor: '#f0f0f0'
+      }}>
+        <div id="blocklyDiv" style={{ 
+          flex: 1,
+          position: 'relative',
+          margin: '10px'
+        }} />
+        <button 
+          onClick={executeBlocklyCode}
+          disabled={isExecuting}
+          style={{
+            padding: '15px',
+            margin: '10px',
+            backgroundColor: isExecuting ? '#ccc' : '#4CAF50',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: isExecuting ? 'not-allowed' : 'pointer',
+            fontSize: '16px',
+            fontWeight: 'bold'
+          }}
+        >
+          {isExecuting ? 'Executing...' : 'Run Program'}
+        </button>
+      </div>
+    </div>
+  );
 }
